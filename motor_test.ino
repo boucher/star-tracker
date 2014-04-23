@@ -17,11 +17,13 @@
 
 #import "lookup.h"
 
+unsigned long MAX_STEPS = 218000;
+
 // initial state is rewinding
 unsigned int state = REWINDING;
-unsigned long revolutions = 0;
-unsigned long MAX_REVOLUTIONS = 218000;
-//unsigned long MAX_REVOLUTIONS = 5012; // for fast testing
+unsigned long steps = 0;
+unsigned long start_time = 0;
+//unsigned long MAX_STEPS = 5012; // for fast testing
 
 void setup()
 {
@@ -45,7 +47,7 @@ void setup()
 }
 
 void loop()
-{
+{  
   // set the enablePin low so that we can now use our stepper driver.
   // wait a few microseconds for the enable to take effect
   // (That isn't in the spec sheet I just added it for sanity.)
@@ -75,9 +77,6 @@ void loop()
         advance();
         delay(1);
       }
-
-      //delay(1000);
-      //state = CALIBRATE;
       break;
 
     case ACTIVE:
@@ -95,19 +94,58 @@ void loop()
 }
 
 void advance() {
-  state = ACTIVE;
+  if (state != ACTIVE) {
+    state = ACTIVE;
+    start_time = millis();
+  }
+
   digitalWrite(dirPin, DIR_OPEN);
   digitalWrite(speedPin, SPEED_SLOW);
   
-  if (revolutions < MAX_REVOLUTIONS) {
-    step_motor();
-    revolutions += 1;
+  if (steps < MAX_STEPS) {
+    unsigned long delta = millis() - start_time;
+    unsigned int index = floor(steps / STEPS_PER_ENTRY);
+    unsigned int remainder = steps % STEPS_PER_ENTRY;
+    unsigned int degrees_in_current_index = ANGLE_LOOKUP[index + 1] - ANGLE_LOOKUP[index];
+
+    Serial.println("delta: ");
+    Serial.println(delta);
+
+    Serial.println("index: ");
+    Serial.println(index);
+
+    Serial.println("taken: ");
+    Serial.println(steps);
+  
+    Serial.println("remainder: ");
+    Serial.println(remainder);
+
+    Serial.println("degrees_in_current_index: ");
+    Serial.println(degrees_in_current_index);
+
+    double degrees_traveled = double(ANGLE_LOOKUP[index]) + degrees_in_current_index * double(remainder) / double(STEPS_PER_ENTRY);
+    double degrees_needed = delta * degrees_per_millisecond - degrees_traveled;
+    
+    unsigned int steps_needed = floor((degrees_needed / degrees_in_current_index) * double(STEPS_PER_ENTRY));
+
+    Serial.println("traveled: ");
+    Serial.println(degrees_traveled);
+
+    Serial.println("needed: ");
+    Serial.println(degrees_needed);
+
+    Serial.println("steps to take: ");
+    Serial.println(steps_needed);
+    
+    //delay(1000);
+
+    step_motor(steps_needed);
   }
 }
 
 void reset() {
   state = RESET;
-  revolutions = 0;
+  steps = 0;
   digitalWrite(stepPin, LOW);
   digitalWrite(dirPin, DIR_OPEN);
   digitalWrite(speedPin, SPEED_SLOW);
@@ -117,24 +155,22 @@ void rewind() {
   state = REWINDING;
   digitalWrite(dirPin, DIR_CLOSE);
   digitalWrite(speedPin, SPEED_FAST);
-  step_motor();  
+  step_motor(1);  
 }
 
-void step_motor() {
-  digitalWrite(stepPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(stepPin, HIGH);
-  delayMicroseconds(1000);
+void step_motor(unsigned int step_count) {
+  for (unsigned int i = 0; i < step_count; i++) {
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(1000);
+    steps += 1;
+  }
 }
 
 void calibrate() {
-  for (int i = 0; i < 128; i++) {
-    step_motor();
-    revolutions += 1;
-  }
-
-  //Serial.println("STEP");
-  Serial.println(ANGLE_LOOKUP[revolutions]);
-
+  step_motor(128);
+  Serial.println("STEP");
+  Serial.println(ANGLE_LOOKUP[steps]);
   delay(200);
 }
